@@ -272,6 +272,32 @@ class ClientRegistryTest {
     }
 
     @Test
+    void abortStopsIdleWriterThread() throws Exception {
+        // A distinctive id so writers leaked by other tests cannot satisfy or fail this check.
+        int id = 987_654;
+        ClientSession s = new ClientSession(id, "127.0.0.1:" + id, new ByteArrayOutputStream(), () -> { }, 8);
+        s.start(e -> { });
+        assertTrue(writerAlive("writer-" + id), "writer thread should be parked on the queue");
+
+        s.abort(); // nothing was ever enqueued, so the writer is idle in queue.take()
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (writerAlive("writer-" + id) && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertFalse(writerAlive("writer-" + id), "idle writer thread leaked after abort()");
+    }
+
+    private static boolean writerAlive(String threadName) {
+        for (Thread t : Thread.getAllStackTraces().keySet()) {
+            if (t.isAlive() && t.getName().equals(threadName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Test
     void abortIsIdempotent() {
         CountingCloseable conn = new CountingCloseable(() -> { });
         ClientSession s = new ClientSession(1, "127.0.0.1:1", new ByteArrayOutputStream(), conn, 8);

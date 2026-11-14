@@ -158,5 +158,12 @@ public final class ClientSession {
         } catch (IOException ignored) {
             // Nothing useful to do when closing a dead connection.
         }
+        // Closing the connection frees a writer stuck in write(), but one idle in queue.take() would
+        // park forever; interrupt it so an aborted session never leaks its thread. Skipped when abort()
+        // runs on the writer itself (write-failure callback): it is already on its way out.
+        Thread w = writer;
+        if (w != null && w != Thread.currentThread()) {
+            w.interrupt();
+        }
     }
 }
