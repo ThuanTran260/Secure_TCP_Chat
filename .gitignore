@@ -1,0 +1,9 @@
+target/
+certificates/
+*.p12
+*.pfx
+*.jks
+*.key
+*.crt
+.idea/
+*.iml
