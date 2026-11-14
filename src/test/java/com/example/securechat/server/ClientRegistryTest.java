@@ -232,6 +232,46 @@ class ClientRegistryTest {
     }
 
     @Test
+    void writeFailureInvokesCallbackOnce() throws Exception {
+        IOException boom = new IOException("boom");
+        OutputStream failing = new OutputStream() {
+            @Override
+            public void write(int b) throws IOException {
+                throw boom;
+            }
+
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                throw boom;
+            }
+        };
+        CountingCloseable conn = new CountingCloseable(() -> { });
+        AtomicInteger callbacks = new AtomicInteger();
+        java.util.concurrent.atomic.AtomicReference<IOException> received =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        CountDownLatch called = new CountDownLatch(1);
+        ClientSession s = new ClientSession(1, "127.0.0.1:1", failing, conn, 8);
+        s.start(e -> {
+            callbacks.incrementAndGet();
+            received.set(e);
+            called.countDown();
+        });
+
+        s.enqueue("{\"type\":\"system\",\"content\":\"a\"}");
+        s.enqueue("{\"type\":\"system\",\"content\":\"b\"}");
+        s.enqueue("{\"type\":\"system\",\"content\":\"c\"}");
+
+        assertTrue(called.await(2, TimeUnit.SECONDS), "callback was not invoked");
+        assertSame(boom, received.get());
+
+        // The writer has stopped; later enqueues are harmless and never re-trigger the callback.
+        s.enqueue("{\"type\":\"system\",\"content\":\"d\"}");
+        s.closeGracefully(Duration.ofMillis(200));
+        assertEquals(1, callbacks.get());
+        assertEquals(1, conn.closes.get());
+    }
+
+    @Test
     void abortIsIdempotent() {
         CountingCloseable conn = new CountingCloseable(() -> { });
         ClientSession s = new ClientSession(1, "127.0.0.1:1", new ByteArrayOutputStream(), conn, 8);
