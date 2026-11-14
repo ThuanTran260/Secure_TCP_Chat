@@ -6,6 +6,7 @@ import com.example.securechat.model.JsonCodec;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.Socket;
 import java.time.Duration;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -127,19 +128,23 @@ public final class ClientSession {
         closing = true;
         long deadline = System.nanoTime() + maxWait.toNanos();
         Thread w = writer;
+        boolean flushed = true;
         try {
-            if (w != null && w.isAlive()) {
-                if (Thread.currentThread() != w) {
-                    // The queue may be full behind a stuck writer, so even the pill is bounded by maxWait.
-                    if (queue.offer(POISON, remaining(deadline), TimeUnit.NANOSECONDS)) {
-                        w.join(Math.max(1, TimeUnit.NANOSECONDS.toMillis(remaining(deadline))));
-                    }
+            if (w != null && w.isAlive() && Thread.currentThread() != w) {
+                // The queue may be full behind a stuck writer, so even the pill is bounded by maxWait.
+                flushed = false;
+                if (queue.offer(POISON, remaining(deadline), TimeUnit.NANOSECONDS)) {
+                    w.join(Math.max(1, TimeUnit.NANOSECONDS.toMillis(remaining(deadline))));
+                    flushed = !w.isAlive();
                 }
             }
         } catch (InterruptedException e) {
+            flushed = false;
             Thread.currentThread().interrupt();
         } finally {
-            abort();
+            // Everything queued was written, so the peer should still get it: close normally (FIN).
+            // If the writer is stuck, close hard so we do not hang behind it.
+            close(!flushed);
         }
     }
 
@@ -147,20 +152,37 @@ public final class ClientSession {
         return Math.max(0, deadlineNanos - System.nanoTime());
     }
 
-    /** Closes the connection immediately. Idempotent; I/O errors are swallowed. */
+    /**
+     * Closes the connection immediately, without waiting for pending output. Idempotent; I/O errors
+     * are swallowed. Never blocks, even when the writer thread is stuck in a socket write.
+     */
     public void abort() {
+        close(true);
+    }
+
+    private void close(boolean hard) {
         if (!aborted.compareAndSet(false, true)) {
             return;
         }
         closing = true;
+        if (hard && connection instanceof Socket) {
+            // SSLSocket.close() waits for the lock held by a writer blocked in write() to send close_notify,
+            // so it would hang for as long as the peer does not read. With SO_LINGER 0 the JDK gives up on
+            // the alert, closes the TCP connection at once and thereby unblocks that writer.
+            try {
+                ((Socket) connection).setSoLinger(true, 0);
+            } catch (IOException | RuntimeException ignored) {
+                // Already closed or not supported; the close below still runs.
+            }
+        }
         try {
             connection.close();
         } catch (IOException ignored) {
             // Nothing useful to do when closing a dead connection.
         }
         // Closing the connection frees a writer stuck in write(), but one idle in queue.take() would
-        // park forever; interrupt it so an aborted session never leaks its thread. Skipped when abort()
-        // runs on the writer itself (write-failure callback): it is already on its way out.
+        // park forever; interrupt it so an aborted session never leaks its thread. Skipped when called
+        // on the writer itself (write-failure callback): it is already on its way out.
         Thread w = writer;
         if (w != null && w != Thread.currentThread()) {
             w.interrupt();

@@ -137,7 +137,15 @@ public final class ChatServer {
      * never blocks on a client socket; a session whose queue is full is dropped.
      */
     void broadcast(ChatMessage message) {
-        String line = JsonCodec.encode(message);
+        broadcastLine(JsonCodec.encode(message));
+    }
+
+    /** Same as {@link #broadcast(ChatMessage)} for a line the caller has already encoded (and size-checked). */
+    void broadcastLine(String line) {
+        if (stopped) {
+            // stop() aborts every session, so enqueues would fail and be misreported as "send queue full".
+            return;
+        }
         for (ClientSession s : registry.authenticatedSnapshot()) {
             if (!s.enqueue(line)) {
                 removeClient(s.id(), REASON_SEND_QUEUE_FULL);
@@ -161,13 +169,17 @@ public final class ChatServer {
         }
         // Logged before closing so the line is already there once the peer notices the close.
         LOG.info("[INFO] Client " + id + " disconnected (" + session.remoteAddress() + ") - " + reason);
+        if (session.isAuthenticated()) {
+            // After the registry removal, so the leaver is not in the snapshot; before the (possibly
+            // slow) graceful close so the others hear about it promptly. Only enqueues, never blocks.
+            broadcast(ChatMessage.userLeft(id, username));
+        }
         if (REASON_SEND_QUEUE_FULL.equals(reason) || REASON_SEND_FAILED.equals(reason)) {
+            // The peer is not draining its socket, so waiting for a flush would only stall us.
             session.abort();
         } else {
             session.closeGracefully(GRACEFUL_CLOSE_WAIT);
         }
-        // Task 7 seam: if the session was authenticated (username != null), broadcast
-        // ChatMessage.userLeft(id, username) here, after the registry removal above.
     }
 
     void socketDone(Socket socket) {

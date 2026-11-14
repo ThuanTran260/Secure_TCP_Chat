@@ -186,12 +186,43 @@ final class ClientHandler implements Runnable {
         return null;
     }
 
-    /**
-     * Task 7 seam: message routing for authenticated sessions (message, login, disconnect, unknown
-     * types, size checks). Until then input from authenticated clients is read and ignored.
-     */
+    /** Routes one message of an authenticated session. Returns null to keep reading, or the close reason. */
     private String handleAuthenticated(ClientSession session, ChatMessage message) {
+        MessageType type = message.messageType().orElse(null);
+        if (type == null) {
+            return reply(session, "UNKNOWN_TYPE");
+        }
+        switch (type) {
+            case MESSAGE:
+                return handleChat(session, message);
+            case LOGIN:
+                return reply(session, "ALREADY_AUTHENTICATED");
+            case DISCONNECT:
+                return "client requested";
+            default:
+                // login_result, system, user_left and error only ever travel server -> client.
+                return reply(session, "UNKNOWN_TYPE");
+        }
+    }
+
+    private String handleChat(ClientSession session, ChatMessage message) {
+        String content = message.getContent();
+        if (content == null || content.isBlank()) {
+            return reply(session, "EMPTY_MESSAGE");
+        }
+        // The server adds clientId and from, so the outgoing line is longer than the incoming one and
+        // must be checked on its own: an oversized line would break the 4096-byte limit for receivers.
+        String line = JsonCodec.encode(ChatMessage.chat(id, session.username(), content));
+        if (!Protocol.fitsLine(line)) {
+            return reply(session, "MESSAGE_TOO_LARGE");
+        }
+        server.broadcastLine(line);
         return null;
+    }
+
+    /** Queues an error reply; a full queue means the client is too slow and gets dropped. */
+    private String reply(ClientSession session, String errorCode) {
+        return session.send(ChatMessage.error(errorCode)) ? null : ChatServer.REASON_SEND_QUEUE_FULL;
     }
 
     private void closeQuietly() {
