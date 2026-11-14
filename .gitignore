@@ -1,5 +1,5 @@
 target/
-certificates/
+certificates*/
 *.p12
 *.pfx
 *.jks
@@ -8,3 +8,5 @@ certificates/
 .idea/
 *.iml
 dependency-reduced-pom.xml
+logs/
+*.log
