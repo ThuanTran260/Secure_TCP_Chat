@@ -5,6 +5,7 @@ import com.example.securechat.common.TlsContexts;
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -26,6 +27,7 @@ public final class ServerMain {
         int port = Protocol.DEFAULT_PORT;
         Path keystore = Path.of(DEFAULT_KEYSTORE);
         Path users = Path.of(DEFAULT_USERS);
+        Path data = Path.of("data");
 
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -37,6 +39,7 @@ public final class ServerMain {
                 case "--port" -> port = parsePort(value);
                 case "--keystore" -> keystore = Path.of(value);
                 case "--users" -> users = Path.of(value);
+                case "--data" -> data = Path.of(value);
                 default -> fail("Tham số không hợp lệ: " + arg);
             }
         }
@@ -63,7 +66,15 @@ public final class ServerMain {
             return;
         }
 
-        ChatServer server = new ChatServer(tls, store, port, ServerOptions.defaults());
+        ServerOptions defaults = ServerOptions.defaults();
+        ChatServer server;
+        try {
+            server = new ChatServer(tls, store, port,
+                    new ServerOptions(defaults.loginTimeout(), defaults.sendQueueCapacity(), defaults.throttle(), data));
+        } catch (UncheckedIOException e) {
+            fail("Không thể mở thư mục dữ liệu: " + e.getCause().getMessage());
+            return;
+        }
         CountDownLatch shutdown = new CountDownLatch(1);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             server.stop();

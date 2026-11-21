@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Locale;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -60,4 +61,6 @@ public final class UserStore {
     public static String normalize(String username) {
         return username == null ? "" : username.trim().toLowerCase(Locale.ROOT);
     }
+
+    public List<String> usernames() { return users.keySet().stream().sorted().toList(); }
 }

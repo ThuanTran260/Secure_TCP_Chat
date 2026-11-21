@@ -10,3 +10,4 @@ certificates*/
 dependency-reduced-pom.xml
 logs/
 *.log
+data/
