@@ -1,6 +1,6 @@
 # Zalo-style Secure Chat Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Nâng Secure TCP Chat thành ứng dụng chat kiểu Zalo với GUI JavaFX, đạt đủ 11 tiêu chí: P2P, Group, File, Emoji, History, Image, Video, Sound, State, Time, Sender.
 
@@ -65,7 +65,7 @@ Error code mới (`error.content`, kèm `fileId`/`to` nếu liên quan): `NOT_ME
 - `ConversationIds`: `LOBBY = "lobby"`; `static String dm(String u1, String u2)`; `static boolean isDm/isGroup/isLobby(String id)`; `static List<String> dmMembers(String id)`; `static String newGroupId()`; `static boolean isValidFileId(String s)`.
 - `Protocol`: `MAX_FILE_BYTES`, `FILE_CHUNK_BYTES`, `HISTORY_LIMIT` theo Global Constraints.
 
-- [ ] **Step 1: Viết test fail**
+- [x] **Step 1: Viết test fail**
 
 ```java
 @Test void dmIdIsSortedAndNormalized() {
@@ -91,10 +91,10 @@ Error code mới (`error.content`, kèm `fileId`/`to` nếu liên quan): `NOT_ME
 }
 ```
 
-- [ ] **Step 2:** `mvn -q test -Dtest=ChatMessageExtTest,ConversationIdsTest` → FAIL (không compile).
-- [ ] **Step 3:** Implement theo Interfaces. `toString()` vẫn che password và **không in `data`** (chỉ in `data=<n chars>`).
-- [ ] **Step 4:** `mvn -q test` → exit 0, 75 test cũ + test mới pass.
-- [ ] **Step 5:** Commit `feat: extend protocol model for conversations, presence and files`.
+- [x] **Step 2:** `mvn -q test -Dtest=ChatMessageExtTest,ConversationIdsTest` → FAIL (không compile).
+- [x] **Step 3:** Implement theo Interfaces. `toString()` vẫn che password và **không in `data`** (chỉ in `data=<n chars>`).
+- [x] **Step 4:** `mvn -q test` → exit 0, 75 test cũ + test mới pass.
+- [x] **Step 5:** Commit `feat: extend protocol model for conversations, presence and files`.
 
 ### Task 2: Lưu trữ phía server
 
@@ -110,15 +110,15 @@ Error code mới (`error.content`, kèm `fileId`/`to` nếu liên quan): `NOT_ME
 - `GroupStore(Path file)`: `record Group(String id, String name, List<String> members)`; `Group create(String name, List<String> members)`; `Optional<Group> find(String id)`; `List<Group> groupsOf(String username)`. Ghi `groups.json` qua file tạm + `Files.move(ATOMIC_MOVE)`, load lúc khởi tạo.
 - `FileStore(Path dir)`: `record FileMeta(String fileId, String conversationId, String uploader, String fileName, String mime, long size, String kind)`; `Upload begin(FileMeta meta)` (ném `IllegalArgumentException` nếu fileId không hợp lệ/đã tồn tại hoặc `size` ∉ (0, MAX_FILE_BYTES]); `Upload` có `void write(int index, byte[] bytes)` (index phải liên tiếp, tổng không vượt `size`, sai → `IllegalStateException`), `FileMeta complete()` (tổng ≠ size → `IllegalStateException`; đổi `.part` → `.bin`, ghi `.json`), `void abort()` (xóa `.part`); `Optional<FileMeta> meta(String fileId)`; `InputStream open(String fileId)`. `fileName` được làm sạch: chỉ giữ phần sau dấu `/` hoặc `\` cuối, tối đa 120 ký tự.
 
-- [ ] **Step 1: Test fail** — tối thiểu:
+- [x] **Step 1: Test fail** — tối thiểu:
   - `historyKeepsOrderAndLimit`: append 60 tin vào `dm:an:binh`, `recent(…, 50)` trả 50 tin, phần tử đầu là tin thứ 11.
   - `historySurvivesReload`: store mới cùng thư mục đọc lại đúng tin; dòng rác trong file bị bỏ qua.
   - `groupPersistsAndListsByMember`: create("Nhóm A", [an, binh]) → GroupStore mới cùng file `find` thấy; `groupsOf("chi")` rỗng.
   - `uploadCompletesOnlyWithExactSize`, `outOfOrderChunkRejected`, `overSizeRejected`, `abortDeletesPart`, `invalidFileIdRejected`, `fileNameSanitized` (`"..\\..\\evil.txt"` → `"evil.txt"`).
-- [ ] **Step 2:** chạy 3 test class → FAIL.
-- [ ] **Step 3:** Implement. Thêm `data/` vào `.gitignore`.
-- [ ] **Step 4:** `mvn -q test` → exit 0.
-- [ ] **Step 5:** Commit `feat: add history, group and file stores`.
+- [x] **Step 2:** chạy 3 test class → FAIL.
+- [x] **Step 3:** Implement. Thêm `data/` vào `.gitignore`.
+- [x] **Step 4:** `mvn -q test` → exit 0.
+- [x] **Step 5:** Commit `feat: add history, group and file stores`.
 
 ### Task 3: Định tuyến hội thoại, lịch sử, presence, nhóm
 
@@ -137,17 +137,17 @@ Error code mới (`error.content`, kèm `fileId`/`to` nếu liên quan): `NOT_ME
 - `history_request`: kiểm quyền, gửi `recent(to, HISTORY_LIMIT)` với `history=true`, rồi `history_end`.
 - `ClientMain`: chỉ in `message` có `to` null hoặc `lobby`; bỏ qua mọi type mới.
 
-- [ ] **Step 1: Test fail** (dùng `RawTlsClient`, `TestUsers`, server với dataDir là `@TempDir`):
+- [x] **Step 1: Test fail** (dùng `RawTlsClient`, `TestUsers`, server với dataDir là `@TempDir`):
   - `dmReachesOnlyTheTwoMembers`: an gửi `messageTo("dm:an:binh","hi")` → an và binh nhận `message` có `to="dm:an:binh"`, `timestamp` = giờ của Clock giả, `from="an"`; chi không nhận gì trong 500 ms.
   - `outsiderGetsNotMember`: chi gửi tới `dm:an:binh` → `error` `NOT_MEMBER`; chi gửi `history_request` `dm:an:binh` → `NOT_MEMBER`.
   - `groupCreateAndChat`: an tạo nhóm với [binh] → an, binh nhận `group_info` (members [an, binh]); tin trong nhóm tới an, binh, không tới chi.
   - `offlineDmAppearsInHistory`: binh offline, an gửi dm; binh login → `history_request` → nhận tin đó có `history=true` rồi `history_end`.
   - `loginSendsUserListAndPresence`: an online, binh login → binh nhận `user_list` (members [an, binh, chi], onlineUsers chứa an, binh); an nhận `presence` binh online=true; binh ngắt → an nhận `presence` online=false.
   - `lobbyStillWorksWithoutTo`: `ChatMessage.message("x")` vẫn tới mọi người (giữ hành vi cũ), có `to="lobby"`.
-- [ ] **Step 2:** chạy → FAIL.
-- [ ] **Step 3:** Implement. Các test cũ đọc message theo thứ tự có thể nhận thêm `user_list`/`presence`/`group_info`: sửa **helper đọc trong test cũ** để bỏ qua 3 type này, không đổi assertion.
-- [ ] **Step 4:** `mvn -q test` → exit 0, chạy `ChatServerConversationTest` 3 lần liên tiếp đều pass.
-- [ ] **Step 5:** Commit `feat: route direct and group conversations with history and presence`.
+- [x] **Step 2:** chạy → FAIL.
+- [x] **Step 3:** Implement. Các test cũ đọc message theo thứ tự có thể nhận thêm `user_list`/`presence`/`group_info`: sửa **helper đọc trong test cũ** để bỏ qua 3 type này, không đổi assertion.
+- [x] **Step 4:** `mvn -q test` → exit 0, chạy `ChatServerConversationTest` 3 lần liên tiếp đều pass.
+- [x] **Step 5:** Commit `feat: route direct and group conversations with history and presence`.
 
 ### Task 4: Truyền file qua TLS
 
@@ -164,17 +164,17 @@ Error code mới (`error.content`, kèm `fileId`/`to` nếu liên quan): `NOT_ME
 - `file_get`: không tồn tại → `FILE_NOT_FOUND`; không có quyền với `conversationId` của file → `NOT_MEMBER`; hợp lệ → task trên executor đọc theo đoạn `FILE_CHUNK_BYTES`, `enqueueBulk(…, 30s)` từng chunk, cuối cùng `file_end`. `enqueueBulk` false → dừng, không ngắt client.
 - Log: `[INFO] File <fileId> uploaded by client <id> (<size> bytes)`; không bao giờ log nội dung/base64.
 
-- [ ] **Step 1: Test fail**:
+- [x] **Step 1: Test fail**:
   - `uploadThenDownloadRoundTrip`: an upload 100 000 byte ngẫu nhiên vào `dm:an:binh` → an, binh nhận `message` kind=`file`; binh `file_get` → ghép chunk khớp byte gốc; chi `file_get` → `NOT_MEMBER`.
   - `oversizeDeclaredRejected`: `size = MAX_FILE_BYTES + 1` → `FILE_TOO_LARGE`, sau đó vẫn chat được.
   - `wrongTotalRejectedAndCleaned`: khai `size` 5000, gửi 3000 byte rồi `file_end` → `FILE_INVALID`; thư mục files không còn `.part`.
   - `disconnectMidUploadCleansUp`: ngắt giữa chừng → không còn `.part` (chờ tối đa 2 s).
   - `downloadDoesNotStarveChat`: server `sendQueueCapacity` 16; binh tải file 2 MB bằng client đọc chậm, đồng thời an gửi 20 tin lobby → binh không bị ngắt và nhận đủ 20 tin.
   - `enqueueBulkKeepsHalfFree` (unit): queue capacity 8, sau 4 `enqueueBulk` thành công lần thứ 5 trả false với maxWait 50 ms; `enqueue` thường vẫn thành công.
-- [ ] **Step 2:** chạy → FAIL.
-- [ ] **Step 3:** Implement; `removeClient` gọi `fileTransfers.sessionClosed(id)`.
-- [ ] **Step 4:** `mvn -q test` → exit 0; `ChatServerFileTest` 3 lần liên tiếp pass.
-- [ ] **Step 5:** Commit `feat: add chunked file upload and download over TLS`.
+- [x] **Step 2:** chạy → FAIL.
+- [x] **Step 3:** Implement; `removeClient` gọi `fileTransfers.sessionClosed(id)`.
+- [x] **Step 4:** `mvn -q test` → exit 0; `ChatServerFileTest` 3 lần liên tiếp pass.
+- [x] **Step 5:** Commit `feat: add chunked file upload and download over TLS`.
 
 ### Task 5: Mở rộng ChatClient
 
@@ -188,9 +188,9 @@ Error code mới (`error.content`, kèm `fileId`/`to` nếu liên quan): `NOT_ME
 - `String uploadFile(String conversationId, Path file, String kind) throws IOException`: chặn khi gọi (chạy trên thread của caller), kiểm `size` ≤ `MAX_FILE_BYTES` trước khi gửi (vượt → `IllegalArgumentException("File vượt quá 25 MB")`), mime = `Files.probeContentType` hoặc `application/octet-stream`, trả fileId.
 - `CompletableFuture<Path> download(String fileId, Path target)`: thread nhận tự xử lý `file_chunk`/`file_end`/`error` có `fileId` đang chờ (ghi vào `target`, complete/completeExceptionally) và **không** chuyển các message đó cho `onMessage`. Kết nối đóng → mọi download đang chờ completeExceptionally.
 
-- [ ] **Step 1: Test fail** (server thật + `TestCerts`): `sendToDmDelivered`, `uploadAndDownloadMatchesBytes` (300 KB), `downloadUnknownFileFails` (future lỗi với message chứa `FILE_NOT_FOUND`), `uploadTooLargeRejectedLocally` (file thưa 25 MB + 1 qua `RandomAccessFile.setLength`), `pendingDownloadFailsOnClose`.
-- [ ] **Step 2:** FAIL. **Step 3:** Implement. **Step 4:** `mvn -q test` exit 0.
-- [ ] **Step 5:** Commit `feat: add conversation, history, group and file APIs to ChatClient`.
+- [x] **Step 1: Test fail** (server thật + `TestCerts`): `sendToDmDelivered`, `uploadAndDownloadMatchesBytes` (300 KB), `downloadUnknownFileFails` (future lỗi với message chứa `FILE_NOT_FOUND`), `uploadTooLargeRejectedLocally` (file thưa 25 MB + 1 qua `RandomAccessFile.setLength`), `pendingDownloadFailsOnClose`.
+- [x] **Step 2:** FAIL. **Step 3:** Implement. **Step 4:** `mvn -q test` exit 0.
+- [x] **Step 5:** Commit `feat: add conversation, history, group and file APIs to ChatClient`.
 
 ### Task 6: JavaFX app — đăng nhập, danh sách hội thoại, chat text
 
@@ -215,10 +215,10 @@ Error code mới (`error.content`, kèm `fileId`/`to` nếu liên quan): `NOT_ME
 - `CreateGroupDialog`: tên nhóm + danh sách checkbox user khác → `createGroup`.
 - `Avatars.circle(String name, double size)`: hình tròn màu theo `name.hashCode()` (bảng 6 màu), chữ cái đầu viết hoa.
 
-- [ ] **Step 1: Test fail `ChatStateTest`**: `userListBuildsLobbyGroupsAndDms` (me=an, members [an,binh,chi] → ids `lobby`, `dm:an:binh`, `dm:an:chi`), `presenceUpdatesOnline`, `messageIncrementsUnreadUnlessOpen`, `historyDeduplicated` (cùng tin vừa live vừa history → 1 entry), `mineFlagByFrom`, `messagesSortedByTimestamp`, `groupInfoAddsGroup`.
-- [ ] **Step 2:** FAIL. **Step 3:** Implement `ChatState`, rồi các view.
-- [ ] **Step 4:** `mvn -q test` exit 0; `mvn -q -DskipTests package` exit 0; khởi động server (env `CHAT_CERT_PASSWORD`, certs trong `certificates/`) rồi `mvn javafx:run` → cửa sổ đăng nhập hiện ra, đăng nhập `an` thành công thấy Phòng chung + binh + chi (ghi lại output/ảnh chụp bằng `[System.Windows.Forms.SendKeys]`/screenshot nếu làm được; nếu không tự đóng cửa sổ được thì ghi "kiểm tra thủ công").
-- [ ] **Step 5:** Commit `feat: add JavaFX client with conversations, presence, emoji and history`.
+- [x] **Step 1: Test fail `ChatStateTest`**: `userListBuildsLobbyGroupsAndDms` (me=an, members [an,binh,chi] → ids `lobby`, `dm:an:binh`, `dm:an:chi`), `presenceUpdatesOnline`, `messageIncrementsUnreadUnlessOpen`, `historyDeduplicated` (cùng tin vừa live vừa history → 1 entry), `mineFlagByFrom`, `messagesSortedByTimestamp`, `groupInfoAddsGroup`.
+- [x] **Step 2:** FAIL. **Step 3:** Implement `ChatState`, rồi các view.
+- [x] **Step 4:** `mvn -q test` exit 0; `mvn -q -DskipTests package` exit 0; khởi động server (env `CHAT_CERT_PASSWORD`, certs trong `certificates/`) rồi `mvn javafx:run` → cửa sổ đăng nhập hiện ra, đăng nhập `an` thành công thấy Phòng chung + binh + chi (ghi lại output/ảnh chụp bằng `[System.Windows.Forms.SendKeys]`/screenshot nếu làm được; nếu không tự đóng cửa sổ được thì ghi "kiểm tra thủ công").
+- [x] **Step 5:** Commit `feat: add JavaFX client with conversations, presence, emoji and history`.
 
 ### Task 7: Ảnh, video, file, ghi âm trong GUI
 
@@ -238,10 +238,10 @@ Error code mới (`error.content`, kèm `fileId`/`to` nếu liên quan): `NOT_ME
   - `file`: biểu tượng 📄 + tên + kích thước (`KB`/`MB`, 1 chữ số thập phân) + nút "Tải về" → `FileChooser` lưu (copy từ cache).
 - `VoiceRecorder`: `void start() throws LineUnavailableException` (AudioFormat 16000 Hz, 16-bit, mono, signed, little-endian); `Path stop() throws IOException` (ghi WAV bằng `AudioSystem.write` vào file tạm `voice-<timestamp>.wav`); tự dừng sau 60 s; `boolean isRecording()`. Nút micro: bấm lần 1 bắt đầu (nút đỏ + đồng hồ `0:12`), lần 2 dừng và gửi với kind `audio`; không có micro → Alert "Không tìm thấy micro".
 
-- [ ] **Step 1: Test fail**: `AttachmentKindsTest` (`"A.MP4"`→video, `"x.jpeg"`→image, `"r.wav"`→audio, `"doc.pdf"`→file); `MediaCacheTest`: `pathForSanitizesName` (`"../a.png"` không thoát khỏi root), `concurrentGetSharesOneDownload` (dùng server thật + `ChatClient` từ Task 5: 2 lần `get` cùng fileId → chỉ 1 lần tải, cả hai future trả cùng Path).
-- [ ] **Step 2:** FAIL. **Step 3:** Implement.
-- [ ] **Step 4:** `mvn -q test` exit 0; chạy GUI thủ công: gửi ảnh PNG, video MP4 (H.264), file PDF, ghi âm 3 s giữa `an` và `binh` → hiển thị và phát được ở cả hai bên. Ghi lại kết quả thật; mục nào không tự kiểm được thì ghi "chờ kiểm tra thủ công".
-- [ ] **Step 5:** Commit `feat: add image, video, file and voice message bubbles`.
+- [x] **Step 1: Test fail**: `AttachmentKindsTest` (`"A.MP4"`→video, `"x.jpeg"`→image, `"r.wav"`→audio, `"doc.pdf"`→file); `MediaCacheTest`: `pathForSanitizesName` (`"../a.png"` không thoát khỏi root), `concurrentGetSharesOneDownload` (dùng server thật + `ChatClient` từ Task 5: 2 lần `get` cùng fileId → chỉ 1 lần tải, cả hai future trả cùng Path).
+- [x] **Step 2:** FAIL. **Step 3:** Implement.
+- [x] **Step 4:** `mvn -q test` exit 0; chạy GUI thủ công: gửi ảnh PNG, video MP4 (H.264), file PDF, ghi âm 3 s giữa `an` và `binh` → hiển thị và phát được ở cả hai bên. Ghi lại kết quả thật; mục nào không tự kiểm được thì ghi "chờ kiểm tra thủ công".
+- [x] **Step 5:** Commit `feat: add image, video, file and voice message bubbles`.
 
 ### Task 8: Test đầu-cuối theo tiêu chí, README, nghiệm thu
 
@@ -251,8 +251,12 @@ Error code mới (`error.content`, kèm `fileId`/`to` nếu liên quan): `NOT_ME
 
 **Interfaces:** Consumes Task 1–7.
 
-- [ ] **Step 1:** `CriteriaEndToEndTest` dùng 3 `ChatClient` thật (an, binh, chi), mỗi tiêu chí không cần GUI là một `@Test` tên tiếng Anh có `@DisplayName` đúng tên tiêu chí: `p2p`, `group`, `file`, `emoji` (gửi `"Chào 😀👍❤️"` → nhận lại đúng chuỗi, đúng code point), `history`, `image` (PNG nhỏ tạo bằng code, download khớp byte), `video` (byte mẫu mime `video/mp4`, khớp byte), `sound` (WAV 1 s tạo bằng `AudioSystem.write`, khớp byte), `state` (presence online/offline), `time` (`timestamp` nằm giữa thời điểm trước gửi và sau nhận), `sender` (`from` đúng người gửi).
-- [ ] **Step 2:** `mvn -q test` → exit 0; ghi tổng số test.
-- [ ] **Step 3:** README thêm mục "Giao diện kiểu Zalo": cách chạy GUI (`mvn javafx:run` và `java -cp target/secure-tcp-chat.jar com.example.securechat.gui.GuiLauncher`), bảng 11 tiêu chí → tính năng → test tự động, giới hạn (25 MB, MP4 H.264, ghi âm 60 s, emoji có thể đơn sắc), thư mục `data/`.
-- [ ] **Step 4:** `docs/acceptance-zalo.md`: checklist thủ công 11 tiêu chí (bước bấm cụ thể trên GUI, kết quả mong đợi, cột PASS/FAIL/chưa kiểm) — điền kết quả thật của các phần đã kiểm được ở Task 6–7, phần còn lại để "chờ kiểm tra thủ công".
-- [ ] **Step 5:** Đảm bảo không còn process java nền, cổng 5000 trống. Commit `docs: add Zalo-style criteria tests, README and acceptance checklist`.
+- [x] **Step 1:** `CriteriaEndToEndTest` dùng 3 `ChatClient` thật (an, binh, chi), mỗi tiêu chí không cần GUI là một `@Test` tên tiếng Anh có `@DisplayName` đúng tên tiêu chí: `p2p`, `group`, `file`, `emoji` (gửi `"Chào 😀👍❤️"` → nhận lại đúng chuỗi, đúng code point), `history`, `image` (PNG nhỏ tạo bằng code, download khớp byte), `video` (byte mẫu mime `video/mp4`, khớp byte), `sound` (WAV 1 s tạo bằng `AudioSystem.write`, khớp byte), `state` (presence online/offline), `time` (`timestamp` nằm giữa thời điểm trước gửi và sau nhận), `sender` (`from` đúng người gửi).
+- [x] **Step 2:** `mvn -q test` → exit 0; ghi tổng số test.
+- [x] **Step 3:** README thêm mục "Giao diện kiểu Zalo": cách chạy GUI (`mvn javafx:run` và `java -cp target/secure-tcp-chat.jar com.example.securechat.gui.GuiLauncher`), bảng 11 tiêu chí → tính năng → test tự động, giới hạn (25 MB, MP4 H.264, ghi âm 60 s, emoji có thể đơn sắc), thư mục `data/`.
+- [x] **Step 4:** `docs/acceptance-zalo.md`: checklist thủ công 11 tiêu chí (bước bấm cụ thể trên GUI, kết quả mong đợi, cột PASS/FAIL/chưa kiểm) — điền kết quả thật của các phần đã kiểm được ở Task 6–7, phần còn lại để "chờ kiểm tra thủ công".
+- [x] **Step 5:** Đảm bảo không còn process java nền, cổng 5000 trống. Commit `docs: add Zalo-style criteria tests, README and acceptance checklist`.
+
+## Execution record — 2026-11-21
+
+Implemented and integrated all eight tasks with three subagents. Ownership, integration decisions, paired commits (Tasks 3–4 and 6–7), and the test workflow are recorded in [agent-workflow.md](../../agent-workflow.md). Final suite: 142 tests, no failures/errors/skips. Conversation/file suites passed in three consecutive successful runs. JavaFX login/chat/emoji were observed on Windows; both the shaded launcher and javafx:run started successfully. Media/device and remaining multi-window GUI checks are explicitly pending in [acceptance-zalo.md](../../acceptance-zalo.md), as allowed by Tasks 6–8. No unobserved manual check is marked PASS.
