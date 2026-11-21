@@ -45,6 +45,7 @@ class ChatClientTest {
     private final List<ChatClient> clients = new CopyOnWriteArrayList<>();
     private final List<ChatServer> servers = new ArrayList<>();
     private LogCapture logs;
+    @TempDir Path dataDir;
 
     @BeforeAll
     static void createTls(@TempDir Path dir) throws Exception {
@@ -76,9 +77,15 @@ class ChatClientTest {
     }
 
     private int startServer(SSLContext serverCtx) throws IOException {
-        ChatServer server = new ChatServer(serverCtx, TestUsers.store(), 0, ServerOptions.defaults());
+        ChatServer server = new ChatServer(serverCtx, TestUsers.store(), 0, isolatedOptions());
         servers.add(server);
         return server.start();
+    }
+
+    private ServerOptions isolatedOptions() {
+        ServerOptions defaults = ServerOptions.defaults();
+        return new ServerOptions(defaults.loginTimeout(), defaults.sendQueueCapacity(), defaults.throttle(),
+                dataDir.resolve("server-" + servers.size()));
     }
 
     private ChatClient newClient(SSLContext ctx) {
@@ -197,7 +204,7 @@ class ChatClientTest {
 
     @Test
     void clientNotifiedWhenServerStops() throws Exception {
-        ChatServer server = new ChatServer(goodServerCtx, TestUsers.store(), 0, ServerOptions.defaults());
+        ChatServer server = new ChatServer(goodServerCtx, TestUsers.store(), 0, isolatedOptions());
         servers.add(server);
         int port = server.start();
         ChatClient c = loggedIn(port, "localhost", "an", "An@12345");

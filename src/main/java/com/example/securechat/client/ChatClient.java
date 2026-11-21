@@ -4,16 +4,27 @@ import com.example.securechat.common.LineReader;
 import com.example.securechat.common.Protocol;
 import com.example.securechat.common.TlsContexts;
 import com.example.securechat.model.ChatMessage;
+import com.example.securechat.model.ConversationIds;
 import com.example.securechat.model.InvalidMessageException;
 import com.example.securechat.model.JsonCodec;
 import com.example.securechat.model.MessageType;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
@@ -32,6 +43,8 @@ public final class ChatClient implements AutoCloseable {
 
     private final SSLContext ctx;
     private final ReentrantLock writeLock = new ReentrantLock();
+    private final ReentrantLock uploadLock = new ReentrantLock();
+    private final ConcurrentHashMap<String, Download> downloads = new ConcurrentHashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicBoolean closedNotified = new AtomicBoolean();
 
@@ -49,6 +62,9 @@ public final class ChatClient implements AutoCloseable {
      * Certificate chain, validity period and host name are verified before this method returns.
      */
     public void connect(String host, int port, int timeoutMs) throws IOException {
+        if (closed.get()) {
+            throw new IllegalStateException("Client is closed");
+        }
         if (socket != null) {
             throw new IllegalStateException("Already connected");
         }
@@ -62,9 +78,12 @@ public final class ChatClient implements AutoCloseable {
             TlsContexts.hardenClient(tls);
             tls.startHandshake();
             tls.setSoTimeout(0);
-            this.out = tls.getOutputStream();
-            this.reader = new LineReader(tls.getInputStream(), Protocol.MAX_LINE_BYTES);
-            this.socket = tls;
+            synchronized (this) {
+                if (closed.get()) throw new IOException("Client is closed");
+                this.out = tls.getOutputStream();
+                this.reader = new LineReader(tls.getInputStream(), Protocol.MAX_LINE_BYTES);
+                this.socket = tls;
+            }
         } catch (IOException | RuntimeException e) {
             closeQuietly(tls != null ? tls : raw);
             throw e;
@@ -148,14 +167,18 @@ public final class ChatClient implements AutoCloseable {
                 } catch (InvalidMessageException e) {
                     continue; // skip a malformed line; framing is still intact
                 }
-                onMessage.accept(m);
+                if (!receiveDownload(m)) {
+                    onMessage.accept(m);
+                }
             }
         } catch (IOException e) {
             reason = e;
         } catch (RuntimeException e) {
             reason = e;
         } finally {
+            closed.set(true);
             closeQuietly(socket);
+            failDownloads(reason == null ? new IOException("Client is closed") : reason);
             if (closedNotified.compareAndSet(false, true)) {
                 onClosed.accept(reason);
             }
@@ -171,7 +194,189 @@ public final class ChatClient implements AutoCloseable {
         writeLine(encoded);
     }
 
+    public void sendTo(String conversationId, String content) throws IOException {
+        writeLine(JsonCodec.encode(ChatMessage.messageTo(conversationId, content)));
+    }
+
+    public void requestHistory(String conversationId) throws IOException {
+        writeLine(JsonCodec.encode(ChatMessage.historyRequest(conversationId)));
+    }
+
+    public void createGroup(String name, List<String> members) throws IOException {
+        writeLine(JsonCodec.encode(ChatMessage.groupCreate(name, members)));
+    }
+
+    /** Sends chunks on the caller's thread; text sends may continue between chunks. */
+    public String uploadFile(String conversationId, Path file, String kind) throws IOException {
+        long size = Files.size(file);
+        if (size > Protocol.MAX_FILE_BYTES) {
+            throw new IllegalArgumentException("File vượt quá 25 MB");
+        }
+        if (size <= 0) {
+            throw new IllegalArgumentException("File rỗng");
+        }
+        if (!List.of("image", "video", "audio", "file").contains(kind)) {
+            throw new IllegalArgumentException("Loại file không hợp lệ");
+        }
+        String fileId = UUID.randomUUID().toString();
+        String mime = Files.probeContentType(file);
+        if (mime == null) mime = "application/octet-stream";
+        String name = file.getFileName().toString();
+        if (name.length() > 120) name = name.substring(0, 120);
+        uploadLock.lock();
+        boolean started = false;
+        boolean ended = false;
+        try (InputStream input = Files.newInputStream(file)) {
+            writeLine(JsonCodec.encode(ChatMessage.fileStart(fileId, conversationId, name, mime, size, kind)));
+            started = true;
+            byte[] buffer = new byte[Protocol.FILE_CHUNK_BYTES];
+            long total = 0;
+            int index = 0;
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                total += count;
+                if (total > size) {
+                    // An invalid chunk also tells the server to abort and remove its partial upload.
+                    writeLine(JsonCodec.encode(ChatMessage.fileChunk(fileId, -1, "")));
+                    throw new IOException("File đã thay đổi trong lúc gửi");
+                }
+                String data = Base64.getEncoder().encodeToString(Arrays.copyOf(buffer, count));
+                writeLine(JsonCodec.encode(ChatMessage.fileChunk(fileId, index++, data)));
+            }
+            writeLine(JsonCodec.encode(ChatMessage.fileEnd(fileId)));
+            ended = true;
+            if (total != size) throw new IOException("File đã thay đổi trong lúc gửi");
+            return fileId;
+        } catch (IOException | RuntimeException error) {
+            if (started && !ended) {
+                try {
+                    writeLine(JsonCodec.encode(ChatMessage.fileChunk(fileId, -1, "")));
+                } catch (IOException | RuntimeException cleanup) {
+                    error.addSuppressed(cleanup);
+                }
+            }
+            throw error;
+        } finally {
+            uploadLock.unlock();
+        }
+    }
+
+    /** The receiver consumes download frames internally and completes the future on file_end. */
+    public CompletableFuture<Path> download(String fileId, Path target) {
+        if (!ConversationIds.isValidFileId(fileId)) {
+            return CompletableFuture.failedFuture(new IOException("FILE_INVALID"));
+        }
+        if (closed.get()) return CompletableFuture.failedFuture(new IOException("Client is closed"));
+        Download transfer;
+        try {
+            requireSocket();
+            transfer = new Download(target);
+        } catch (IOException | RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+        Download existing = downloads.putIfAbsent(fileId, transfer);
+        if (existing != null) {
+            transfer.fail(new IOException("File đang được tải"));
+            return transfer.future;
+        }
+        transfer.future.whenComplete((path, error) -> {
+            if (transfer.future.isCancelled() && downloads.remove(fileId, transfer)) {
+                transfer.fail(new IOException("Download cancelled"));
+            }
+        });
+        try {
+            writeLine(JsonCodec.encode(ChatMessage.fileGet(fileId)));
+        } catch (IOException | RuntimeException e) {
+            downloads.remove(fileId, transfer);
+            transfer.fail(e);
+        }
+        return transfer.future;
+    }
+
+    private boolean receiveDownload(ChatMessage message) {
+        String id = message.getFileId();
+        Download transfer = id == null ? null : downloads.get(id);
+        MessageType type = message.messageType().orElse(null);
+        if (transfer == null || (type != MessageType.FILE_CHUNK && type != MessageType.FILE_END
+                && type != MessageType.ERROR)) return false;
+        try {
+            if (type == MessageType.ERROR) {
+                throw new IOException(message.getContent());
+            }
+            if (type == MessageType.FILE_END) {
+                downloads.remove(id, transfer);
+                transfer.complete();
+            } else {
+                transfer.write(message);
+            }
+        } catch (IOException | RuntimeException e) {
+            downloads.remove(id, transfer);
+            transfer.fail(e);
+        }
+        return true;
+    }
+
+    private void failDownloads(Exception reason) {
+        downloads.forEach((id, transfer) -> {
+            if (downloads.remove(id, transfer)) transfer.fail(reason);
+        });
+    }
+
+    private static final class Download {
+        private final Path target;
+        private final OutputStream stream;
+        private final CompletableFuture<Path> future = new CompletableFuture<>();
+        private long total;
+        private int nextIndex;
+        private boolean finished;
+
+        Download(Path target) throws IOException {
+            this.target = Objects.requireNonNull(target, "target");
+            Path parent = target.toAbsolutePath().getParent();
+            if (parent != null) Files.createDirectories(parent);
+            stream = Files.newOutputStream(target, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        }
+
+        synchronized void write(ChatMessage message) throws IOException {
+            if (finished) throw new IOException("Download closed");
+            if (message.getIndex() == null || message.getIndex() != nextIndex || message.getData() == null) {
+                throw new IOException("FILE_INVALID: chunk index");
+            }
+            byte[] bytes;
+            try {
+                bytes = Base64.getDecoder().decode(message.getData());
+            } catch (IllegalArgumentException e) {
+                throw new IOException("FILE_INVALID: base64", e);
+            }
+            if (bytes.length == 0 || bytes.length > Protocol.FILE_CHUNK_BYTES
+                    || total + bytes.length > Protocol.MAX_FILE_BYTES) {
+                throw new IOException("FILE_INVALID: chunk size");
+            }
+            stream.write(bytes);
+            total += bytes.length;
+            nextIndex++;
+        }
+
+        synchronized void complete() throws IOException {
+            if (finished) return;
+            stream.close();
+            finished = true;
+            future.complete(target);
+        }
+
+        synchronized void fail(Throwable reason) {
+            if (finished) return;
+            finished = true;
+            try { stream.close(); } catch (IOException e) { reason.addSuppressed(e); }
+            try { Files.deleteIfExists(target); } catch (IOException e) { reason.addSuppressed(e); }
+            future.completeExceptionally(reason);
+        }
+    }
+
     private void writeLine(String json) throws IOException {
+        if (!Protocol.fitsLine(json)) {
+            throw new IllegalArgumentException("Tin nhắn quá dài");
+        }
         requireSocket();
         writeLock.lock();
         try {
@@ -188,10 +393,14 @@ public final class ChatClient implements AutoCloseable {
     /** Best-effort {@code disconnect} followed by closing the socket; safe to call repeatedly. */
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) {
-            return;
+        SSLSocket s;
+        synchronized (this) {
+            if (!closed.compareAndSet(false, true)) {
+                return;
+            }
+            s = socket;
         }
-        SSLSocket s = socket;
+        failDownloads(new IOException("Client is closed"));
         if (s == null) {
             return;
         }
