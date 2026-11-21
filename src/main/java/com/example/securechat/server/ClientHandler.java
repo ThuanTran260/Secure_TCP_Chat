@@ -6,12 +6,16 @@ import com.example.securechat.common.LineReader;
 import com.example.securechat.common.MessageTooLargeException;
 import com.example.securechat.common.Protocol;
 import com.example.securechat.model.ChatMessage;
+import com.example.securechat.model.ConversationIds;
 import com.example.securechat.model.InvalidMessageException;
 import com.example.securechat.model.JsonCodec;
 import com.example.securechat.model.MessageType;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.util.Arrays;
+import java.util.List;
+import java.util.TreeSet;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLSocket;
 
@@ -182,12 +186,21 @@ final class ClientHandler implements Runnable {
         }
         session.markAuthenticated(username);
         socket.setSoTimeout(0);
+        ChatMessage roster = ChatMessage.userList(server.users().usernames(), server.registry().authenticatedSnapshot()
+                .stream().map(ClientSession::username).sorted().toList());
+        if (!sendChecked(session, roster)) return ChatServer.REASON_SEND_QUEUE_FULL;
+        for (GroupStore.Group group : server.groups().groupsOf(username)) {
+            if (!sendChecked(session, ChatMessage.groupInfo(group.id(), group.name(), group.members()))) {
+                return ChatServer.REASON_SEND_QUEUE_FULL;
+            }
+        }
+        server.broadcast(ChatMessage.presence(username, true));
         server.broadcast(ChatMessage.system(username + " đã tham gia"));
         return null;
     }
 
     /** Routes one message of an authenticated session. Returns null to keep reading, or the close reason. */
-    private String handleAuthenticated(ClientSession session, ChatMessage message) {
+    private String handleAuthenticated(ClientSession session, ChatMessage message) throws IOException {
         MessageType type = message.messageType().orElse(null);
         if (type == null) {
             return reply(session, "UNKNOWN_TYPE");
@@ -195,6 +208,18 @@ final class ClientHandler implements Runnable {
         switch (type) {
             case MESSAGE:
                 return handleChat(session, message);
+            case GROUP_CREATE:
+                return handleGroupCreate(session, message);
+            case HISTORY_REQUEST:
+                return handleHistory(session, message);
+            case FILE_START:
+                server.fileTransfers().onStart(session, message); return null;
+            case FILE_CHUNK:
+                server.fileTransfers().onChunk(session, message); return null;
+            case FILE_END:
+                server.fileTransfers().onEnd(session, message); return null;
+            case FILE_GET:
+                server.fileTransfers().onGet(session, message); return null;
             case LOGIN:
                 return reply(session, "ALREADY_AUTHENTICATED");
             case DISCONNECT:
@@ -205,24 +230,74 @@ final class ClientHandler implements Runnable {
         }
     }
 
-    private String handleChat(ClientSession session, ChatMessage message) {
+    private String handleChat(ClientSession session, ChatMessage message) throws IOException {
+        String to = conversation(message);
+        String error = server.conversationError(session.username(), to);
+        if (error != null) return reply(session, error, message.getFileId(), to);
         String content = message.getContent();
         if (content == null || content.isBlank()) {
             return reply(session, "EMPTY_MESSAGE");
         }
         // The server adds clientId and from, so the outgoing line is longer than the incoming one and
         // must be checked on its own: an oversized line would break the 4096-byte limit for receivers.
-        String line = JsonCodec.encode(ChatMessage.chat(id, session.username(), content));
-        if (!Protocol.fitsLine(line)) {
+        ChatMessage chat = ChatMessage.chatIn(to, id, session.username(), content, server.clock().millis());
+        if (!server.publish(chat)) {
             return reply(session, "MESSAGE_TOO_LARGE");
         }
-        server.broadcastLine(line);
         return null;
+    }
+
+    private String handleGroupCreate(ClientSession session, ChatMessage message) throws IOException {
+        String name = message.getGroupName();
+        if (name == null || name.isBlank() || name.length() > 50 || message.getMembers() == null) {
+            return reply(session, "INVALID_GROUP");
+        }
+        TreeSet<String> members = new TreeSet<>();
+        members.add(session.username());
+        for (String member : message.getMembers()) {
+            String user = UserStore.normalize(member);
+            if (!server.users().usernames().contains(user)) return reply(session, "INVALID_GROUP");
+            members.add(user);
+        }
+        List<String> membership = List.copyOf(members);
+        if (!Protocol.fitsLine(JsonCodec.encode(ChatMessage.groupInfo(ConversationIds.newGroupId(), name.trim(), membership)))) {
+            return reply(session, "INVALID_GROUP");
+        }
+        GroupStore.Group group = server.groups().create(name, membership);
+        server.deliver(group.id(), JsonCodec.encode(ChatMessage.groupInfo(group.id(), group.name(), group.members())));
+        return null;
+    }
+
+    private String handleHistory(ClientSession session, ChatMessage message) throws IOException {
+        String to = conversation(message);
+        String error = server.conversationError(session.username(), to);
+        if (error != null) return reply(session, error, null, to);
+        for (ChatMessage stored : server.history().recent(to, Protocol.HISTORY_LIMIT)) {
+            ChatMessage history = stored.copy();
+            history.setHistory(true);
+            String line = JsonCodec.encode(history);
+            if (!Protocol.fitsLine(line)) return reply(session, "MESSAGE_TOO_LARGE", null, to);
+            if (!session.enqueueBulk(line, Duration.ofSeconds(30))) return ChatServer.REASON_SEND_QUEUE_FULL;
+        }
+        return sendChecked(session, ChatMessage.historyEnd(to)) ? null : ChatServer.REASON_SEND_QUEUE_FULL;
+    }
+
+    private static String conversation(ChatMessage message) {
+        return message.getTo() == null ? ConversationIds.LOBBY : message.getTo();
+    }
+
+    private static boolean sendChecked(ClientSession session, ChatMessage message) {
+        String line = JsonCodec.encode(message);
+        return session.enqueue(Protocol.fitsLine(line) ? line : JsonCodec.encode(ChatMessage.error("MESSAGE_TOO_LARGE")));
     }
 
     /** Queues an error reply; a full queue means the client is too slow and gets dropped. */
     private String reply(ClientSession session, String errorCode) {
         return session.send(ChatMessage.error(errorCode)) ? null : ChatServer.REASON_SEND_QUEUE_FULL;
+    }
+
+    private String reply(ClientSession session, String code, String fileId, String to) {
+        return sendChecked(session, ChatMessage.error(code, fileId, to)) ? null : ChatServer.REASON_SEND_QUEUE_FULL;
     }
 
     private void closeQuietly() {

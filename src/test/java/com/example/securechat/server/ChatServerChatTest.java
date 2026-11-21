@@ -190,9 +190,15 @@ class ChatServerChatTest {
     }
 
     private static void assertNothingWithin(RawTlsClient c, Duration quiet) throws IOException {
+        long deadline = System.nanoTime() + quiet.toNanos();
         try {
-            ChatMessage m = c.read(quiet);
-            fail("expected silence but got " + (m == null ? "EOF" : JsonCodec.encode(m)));
+            while (System.nanoTime() < deadline) {
+                ChatMessage m = c.read(Duration.ofNanos(Math.max(1, deadline - System.nanoTime())));
+                if (m != null && List.of("user_list", "presence", "group_info").contains(m.getType())) {
+                    continue;
+                }
+                fail("expected silence but got " + (m == null ? "EOF" : JsonCodec.encode(m)));
+            }
         } catch (SocketTimeoutException expected) {
             // silence is what we want
         }
@@ -302,10 +308,17 @@ class ChatServerChatTest {
     /** Largest k such that a chat line carrying k three-byte characters still fits the 4096-byte limit. */
     private int maxEnrichedChars() {
         int k = 1;
-        while (Protocol.fitsLine(JsonCodec.encode(ChatMessage.chat(anId, "an", "ệ".repeat(k + 1))))) {
+        while (fitsReplay(k + 1)) {
             k++;
         }
         return k;
+    }
+
+    private boolean fitsReplay(int count) {
+        ChatMessage message = ChatMessage.chatIn("lobby", anId, "an", "ệ".repeat(count),
+                System.currentTimeMillis());
+        message.setHistory(true);
+        return Protocol.fitsLine(JsonCodec.encode(message));
     }
 
     @Test

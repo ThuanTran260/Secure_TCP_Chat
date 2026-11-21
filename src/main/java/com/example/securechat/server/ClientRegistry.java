@@ -2,6 +2,7 @@ package com.example.securechat.server;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Thread-safe registry of connected sessions and of the usernames currently logged in. */
@@ -41,5 +42,11 @@ public final class ClientRegistry {
 
     public int size() {
         return sessions.size();
+    }
+
+    public Optional<ClientSession> sessionOf(String username) {
+        Integer id = usernames.get(username);
+        ClientSession session = id == null ? null : sessions.get(id);
+        return session != null && session.isAuthenticated() ? Optional.of(session) : Optional.empty();
     }
 }

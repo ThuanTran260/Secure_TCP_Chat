@@ -184,7 +184,11 @@ public final class ClientMain {
             return;
         }
         switch (type) {
-            case MESSAGE -> OUT.println("[" + m.getFrom() + "] " + m.getContent());
+            case MESSAGE -> {
+                if (m.getTo() == null || "lobby".equals(m.getTo())) {
+                    OUT.println("[" + m.getFrom() + "] " + m.getContent());
+                }
+            }
             case SYSTEM, USER_LEFT -> OUT.println("* " + m.getContent());
             case ERROR -> OUT.println("! " + m.getContent());
             default -> { }

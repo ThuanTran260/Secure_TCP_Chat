@@ -1,13 +1,18 @@
 package com.example.securechat.server;
 
 import com.example.securechat.common.TlsContexts;
+import com.example.securechat.common.Protocol;
 import com.example.securechat.model.ChatMessage;
+import com.example.securechat.model.ConversationIds;
 import com.example.securechat.model.JsonCodec;
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.time.Duration;
+import java.time.Clock;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,6 +45,11 @@ public final class ChatServer {
     private final UserStore users;
     private final int requestedPort;
     private final ServerOptions options;
+    private final Clock clock;
+    private final HistoryStore history;
+    private final GroupStore groups;
+    private final FileStore files;
+    private final FileTransfers fileTransfers;
     private final ClientRegistry registry = new ClientRegistry();
     private final AtomicInteger nextId = new AtomicInteger(1);
 
@@ -53,10 +63,23 @@ public final class ChatServer {
     private volatile boolean stopped;
 
     public ChatServer(SSLContext sslContext, UserStore users, int port, ServerOptions options) {
+        this(sslContext, users, port, options, Clock.systemUTC());
+    }
+
+    ChatServer(SSLContext sslContext, UserStore users, int port, ServerOptions options, Clock clock) {
         this.sslContext = Objects.requireNonNull(sslContext, "sslContext");
         this.users = Objects.requireNonNull(users, "users");
         this.requestedPort = port;
         this.options = Objects.requireNonNull(options, "options");
+        this.clock = Objects.requireNonNull(clock, "clock");
+        try {
+            history = new HistoryStore(options.dataDir().resolve("history"));
+            groups = new GroupStore(options.dataDir().resolve("groups.json"));
+            files = new FileStore(options.dataDir().resolve("files"));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot open server data directory", e);
+        }
+        fileTransfers = new FileTransfers(this);
     }
 
     /** Binds 0.0.0.0:port, starts accepting on a background thread and returns the actual port. */
@@ -96,6 +119,7 @@ public final class ChatServer {
         for (ClientSession s : registry.authenticatedSnapshot()) {
             s.abort();
         }
+        fileTransfers.shutdown();
         for (Socket s : openSockets) {
             closeQuietly(s);
         }
@@ -132,12 +156,61 @@ public final class ChatServer {
         return users;
     }
 
+    Clock clock() { return clock; }
+    HistoryStore history() { return history; }
+    GroupStore groups() { return groups; }
+    FileStore files() { return files; }
+    FileTransfers fileTransfers() { return fileTransfers; }
+
+    boolean canAccess(String username, String conversationId) {
+        if (ConversationIds.isLobby(conversationId)) return true;
+        if (ConversationIds.isDm(conversationId)) {
+            List<String> members = ConversationIds.dmMembers(conversationId);
+            return members.contains(username) && users.usernames().containsAll(members);
+        }
+        return ConversationIds.isGroup(conversationId)
+                && groups.find(conversationId).map(g -> g.members().contains(username)).orElse(false);
+    }
+
+    String conversationError(String username, String conversationId) {
+        if (!(ConversationIds.isLobby(conversationId) || ConversationIds.isDm(conversationId)
+                || ConversationIds.isGroup(conversationId))) return "UNKNOWN_CONVERSATION";
+        if (ConversationIds.isGroup(conversationId) && groups.find(conversationId).isEmpty()) return "UNKNOWN_CONVERSATION";
+        return canAccess(username, conversationId) ? null : "NOT_MEMBER";
+    }
+
+    void deliver(String conversationId, String line) {
+        if (stopped) return;
+        if (!Protocol.fitsLine(line)) throw new IllegalArgumentException("Message exceeds line limit");
+        if (ConversationIds.isLobby(conversationId)) { broadcastLine(line); return; }
+        List<String> members = ConversationIds.isDm(conversationId) ? ConversationIds.dmMembers(conversationId)
+                : groups.find(conversationId).map(GroupStore.Group::members).orElse(List.of());
+        for (String username : members) registry.sessionOf(username).ifPresent(session -> {
+            if (!session.enqueue(line)) removeClient(session.id(), REASON_SEND_QUEUE_FULL);
+        });
+    }
+
+    /** Persists first, then echoes to every online member, including the sender. */
+    boolean publish(ChatMessage message) throws IOException {
+        String line = JsonCodec.encode(message);
+        if (!Protocol.fitsLine(line)) return false;
+        ChatMessage replay = message.copy();
+        replay.setHistory(true);
+        if (!Protocol.fitsLine(JsonCodec.encode(replay))) return false;
+        synchronized (history) {
+            history.append(message.getTo(), message);
+            deliver(message.getTo(), line);
+        }
+        return true;
+    }
+
     /**
      * Sends the message to every authenticated session. The line is encoded once and queued, so this
      * never blocks on a client socket; a session whose queue is full is dropped.
      */
     void broadcast(ChatMessage message) {
-        broadcastLine(JsonCodec.encode(message));
+        String line = JsonCodec.encode(message);
+        if (Protocol.fitsLine(line)) broadcastLine(line);
     }
 
     /** Same as {@link #broadcast(ChatMessage)} for a line the caller has already encoded (and size-checked). */
@@ -162,6 +235,7 @@ public final class ChatServer {
         if (session == null) {
             return;
         }
+        fileTransfers.sessionClosed(id);
         String username = session.username();
         if (username != null) {
             // Free the name before the (possibly slow) graceful close so the user can reconnect.
@@ -173,6 +247,7 @@ public final class ChatServer {
             // After the registry removal, so the leaver is not in the snapshot; before the (possibly
             // slow) graceful close so the others hear about it promptly. Only enqueues, never blocks.
             broadcast(ChatMessage.userLeft(id, username));
+            broadcast(ChatMessage.presence(username, false));
         }
         if (REASON_SEND_QUEUE_FULL.equals(reason) || REASON_SEND_FAILED.equals(reason)) {
             // The peer is not draining its socket, so waiting for a flush would only stall us.

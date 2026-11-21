@@ -31,6 +31,8 @@ public final class ClientSession {
     private final OutputStream out;
     private final Closeable connection;
     private final BlockingQueue<String> queue;
+    private final Object queueGate = new Object();
+    private final int queueCapacity;
 
     private volatile boolean authenticated;
     private volatile String username;
@@ -49,6 +51,7 @@ public final class ClientSession {
         this.out = out;
         this.connection = connection;
         this.queue = new ArrayBlockingQueue<>(queueCapacity);
+        this.queueCapacity = queueCapacity;
     }
 
     public int id() {
@@ -91,6 +94,7 @@ public final class ClientSession {
         try {
             while (true) {
                 String line = queue.take();
+                synchronized (queueGate) { queueGate.notifyAll(); }
                 if (line == POISON) {
                     return;
                 }
@@ -109,10 +113,26 @@ public final class ClientSession {
 
     /** Never blocks. Returns false when the queue is full or the session is closing/closed. */
     public boolean enqueue(String jsonLine) {
-        if (closing || aborted.get()) {
+        synchronized (queueGate) {
+            if (closing || aborted.get() || !Protocol.fitsLine(jsonLine)) return false;
+            return queue.offer(jsonLine);
+        }
+    }
+
+    /** Waits for bulk capacity while reserving at least half the queue for ordinary messages. */
+    public boolean enqueueBulk(String jsonLine, Duration maxWait) {
+        if (!Protocol.fitsLine(jsonLine)) return false;
+        long deadline = System.nanoTime() + maxWait.toNanos();
+        synchronized (queueGate) {
+            while (!closing && !aborted.get()) {
+                if (queue.remainingCapacity() > queueCapacity / 2) return queue.offer(jsonLine);
+                long wait = deadline - System.nanoTime();
+                if (wait <= 0) return false;
+                try { TimeUnit.NANOSECONDS.timedWait(queueGate, wait); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
+            }
             return false;
         }
-        return queue.offer(jsonLine);
     }
 
     public boolean send(ChatMessage m) {
@@ -126,6 +146,7 @@ public final class ClientSession {
      */
     public void closeGracefully(Duration maxWait) {
         closing = true;
+        synchronized (queueGate) { queueGate.notifyAll(); }
         long deadline = System.nanoTime() + maxWait.toNanos();
         Thread w = writer;
         boolean flushed = true;
@@ -165,6 +186,7 @@ public final class ClientSession {
             return;
         }
         closing = true;
+        synchronized (queueGate) { queueGate.notifyAll(); }
         if (hard && connection instanceof Socket) {
             // SSLSocket.close() waits for the lock held by a writer blocked in write() to send close_notify,
             // so it would hang for as long as the peer does not read. With SO_LINGER 0 the JDK gives up on
