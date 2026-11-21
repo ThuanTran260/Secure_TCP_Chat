@@ -1,6 +1,7 @@
 package com.example.securechat.model;
 
 import java.util.Optional;
+import java.util.List;
 
 /**
  * One protocol message. Public no-arg constructor and accessors exist for Jackson;
@@ -14,6 +15,20 @@ public final class ChatMessage {
     private String from;
     private Boolean success;
     private Integer clientId;
+    private String to;
+    private Long timestamp;
+    private String kind;
+    private String fileId;
+    private String fileName;
+    private String mime;
+    private Long size;
+    private Integer index;
+    private String data;
+    private Boolean online;
+    private List<String> members;
+    private List<String> onlineUsers;
+    private String groupName;
+    private Boolean history;
 
     public ChatMessage() {
     }
@@ -77,6 +92,125 @@ public final class ChatMessage {
         return new ChatMessage(MessageType.DISCONNECT);
     }
 
+    public static ChatMessage messageTo(String to, String content) {
+        ChatMessage m = message(content);
+        m.to = to;
+        return m;
+    }
+
+    public static ChatMessage chatIn(String to, int clientId, String from, String content, long timestamp) {
+        ChatMessage m = chat(clientId, from, content);
+        m.to = to;
+        m.timestamp = timestamp;
+        return m;
+    }
+
+    public static ChatMessage presence(String username, boolean online) {
+        ChatMessage m = new ChatMessage(MessageType.PRESENCE);
+        m.from = username;
+        m.online = online;
+        return m;
+    }
+
+    public static ChatMessage userList(List<String> members, List<String> onlineUsers) {
+        ChatMessage m = new ChatMessage(MessageType.USER_LIST);
+        m.members = members;
+        m.onlineUsers = onlineUsers;
+        return m;
+    }
+
+    public static ChatMessage groupCreate(String name, List<String> members) {
+        ChatMessage m = new ChatMessage(MessageType.GROUP_CREATE);
+        m.groupName = name;
+        m.members = members;
+        return m;
+    }
+
+    public static ChatMessage groupInfo(String groupId, String name, List<String> members) {
+        ChatMessage m = new ChatMessage(MessageType.GROUP_INFO);
+        m.to = groupId;
+        m.groupName = name;
+        m.members = members;
+        return m;
+    }
+
+    public static ChatMessage historyRequest(String to) {
+        ChatMessage m = new ChatMessage(MessageType.HISTORY_REQUEST);
+        m.to = to;
+        return m;
+    }
+
+    public static ChatMessage historyEnd(String to) {
+        ChatMessage m = new ChatMessage(MessageType.HISTORY_END);
+        m.to = to;
+        return m;
+    }
+
+    public static ChatMessage fileStart(String fileId, String to, String fileName, String mime, long size, String kind) {
+        ChatMessage m = new ChatMessage(MessageType.FILE_START);
+        m.fileId = fileId;
+        m.to = to;
+        m.fileName = fileName;
+        m.mime = mime;
+        m.size = size;
+        m.kind = kind;
+        return m;
+    }
+
+    public static ChatMessage fileChunk(String fileId, int index, String base64) {
+        ChatMessage m = new ChatMessage(MessageType.FILE_CHUNK);
+        m.fileId = fileId;
+        m.index = index;
+        m.data = base64;
+        return m;
+    }
+
+    public static ChatMessage fileEnd(String fileId) {
+        ChatMessage m = new ChatMessage(MessageType.FILE_END);
+        m.fileId = fileId;
+        return m;
+    }
+
+    public static ChatMessage fileGet(String fileId) {
+        ChatMessage m = new ChatMessage(MessageType.FILE_GET);
+        m.fileId = fileId;
+        return m;
+    }
+
+    public static ChatMessage error(String code, String fileId, String to) {
+        ChatMessage m = error(code);
+        m.fileId = fileId;
+        m.to = to;
+        return m;
+    }
+
+    /** Returns an independent message object while sharing immutable field values and lists. */
+    public ChatMessage copy() {
+        ChatMessage m = new ChatMessage();
+        m.type = type;
+        m.username = username;
+        m.password = password;
+        m.content = content;
+        m.from = from;
+        m.success = success;
+        m.clientId = clientId;
+        m.to = to;
+        m.timestamp = timestamp;
+        m.kind = kind;
+        m.fileId = fileId;
+        m.fileName = fileName;
+        m.mime = mime;
+        m.size = size;
+        m.index = index;
+        m.data = data;
+        m.online = online;
+        m.members = members;
+        m.onlineUsers = onlineUsers;
+        m.groupName = groupName;
+        m.history = history;
+        return m;
+    }
+
     /** Parsed type, or empty when {@code type} is null or not a known value. */
     public Optional<MessageType> messageType() {
         return MessageType.fromValue(type);
@@ -103,7 +237,49 @@ public final class ChatMessage {
     public Integer getClientId() { return clientId; }
     public void setClientId(Integer clientId) { this.clientId = clientId; }
 
-    /** Never prints the password. */
+    public String getTo() { return to; }
+    public void setTo(String to) { this.to = to; }
+
+    public Long getTimestamp() { return timestamp; }
+    public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }
+
+    public String getKind() { return kind; }
+    public void setKind(String kind) { this.kind = kind; }
+
+    public String getFileId() { return fileId; }
+    public void setFileId(String fileId) { this.fileId = fileId; }
+
+    public String getFileName() { return fileName; }
+    public void setFileName(String fileName) { this.fileName = fileName; }
+
+    public String getMime() { return mime; }
+    public void setMime(String mime) { this.mime = mime; }
+
+    public Long getSize() { return size; }
+    public void setSize(Long size) { this.size = size; }
+
+    public Integer getIndex() { return index; }
+    public void setIndex(Integer index) { this.index = index; }
+
+    public String getData() { return data; }
+    public void setData(String data) { this.data = data; }
+
+    public Boolean getOnline() { return online; }
+    public void setOnline(Boolean online) { this.online = online; }
+
+    public List<String> getMembers() { return members; }
+    public void setMembers(List<String> members) { this.members = members; }
+
+    public List<String> getOnlineUsers() { return onlineUsers; }
+    public void setOnlineUsers(List<String> onlineUsers) { this.onlineUsers = onlineUsers; }
+
+    public String getGroupName() { return groupName; }
+    public void setGroupName(String groupName) { this.groupName = groupName; }
+
+    public Boolean getHistory() { return history; }
+    public void setHistory(Boolean history) { this.history = history; }
+
+    /** Never prints passwords or attachment payloads. */
     @Override
     public String toString() {
         return "ChatMessage{type=" + type
@@ -112,6 +288,9 @@ public final class ChatMessage {
                 + ", content=" + content
                 + ", from=" + from
                 + ", success=" + success
-                + ", clientId=" + clientId + "}";
+                + ", clientId=" + clientId
+                + ", to=" + to
+                + ", timestamp=" + timestamp
+                + (data != null ? ", data=<" + data.length() + " chars>" : "") + "}";
     }
 }

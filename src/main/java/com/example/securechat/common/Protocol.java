@@ -14,6 +14,10 @@ public final class Protocol {
     /** Maximum bytes per line (excluding the trailing '\n'), enforced in both directions. */
     public static final int MAX_LINE_BYTES = 4096;
 
+    public static final int MAX_FILE_BYTES = 25 * 1024 * 1024;
+    public static final int FILE_CHUNK_BYTES = 2048;
+    public static final int HISTORY_LIMIT = 50;
+
     public static final String[] TLS_PROTOCOLS = {"TLSv1.3", "TLSv1.2"};
 
     public static final int HANDSHAKE_TIMEOUT_MS = 10_000;

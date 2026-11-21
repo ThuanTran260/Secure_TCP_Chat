@@ -10,7 +10,17 @@ public enum MessageType {
     SYSTEM("system"),
     USER_LEFT("user_left"),
     ERROR("error"),
-    DISCONNECT("disconnect");
+    DISCONNECT("disconnect"),
+    PRESENCE("presence"),
+    USER_LIST("user_list"),
+    GROUP_CREATE("group_create"),
+    GROUP_INFO("group_info"),
+    HISTORY_REQUEST("history_request"),
+    HISTORY_END("history_end"),
+    FILE_START("file_start"),
+    FILE_CHUNK("file_chunk"),
+    FILE_END("file_end"),
+    FILE_GET("file_get");
 
     private final String value;
 
