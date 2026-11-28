@@ -42,7 +42,8 @@
 .message-bubble { -fx-background-radius: 13; -fx-padding: 11 14 8 14; }
 .message-mine { -fx-background-color: #e5efff; -fx-border-color: #d6e5fc; -fx-border-radius: 13; }
 .message-other { -fx-background-color: white; -fx-border-color: #e5e8ed; -fx-border-radius: 13; }
-.message-text { -fx-font-size: 14px; -fx-line-spacing: 3; }
+.message-text { -fx-line-spacing: 3; }
+.message-text-run { -fx-font-size: 14px; -fx-fill: #172b4d; }
 .sender-name { -fx-text-fill: #426fa8; -fx-font-size: 11px; -fx-font-weight: bold; }
 .message-time { -fx-text-fill: #8c9aad; -fx-font-size: 10px; }
 .day-separator { -fx-padding: 12 0; }
@@ -56,7 +57,7 @@
 .toolbar-button.recording { -fx-text-fill: #e7445a; -fx-background-color: #ffedf1; }
 .record-clock { -fx-text-fill: #e7445a; -fx-font-size: 12px; }
 .emoji-picker { -fx-background-color: white; -fx-padding: 12; -fx-hgap: 3; -fx-vgap: 3; -fx-background-radius: 12; -fx-effect: dropshadow(gaussian, rgba(26,45,75,.18), 15, 0, 0, 3); }
-.emoji-button { -fx-background-color: transparent; -fx-font-family: "Segoe UI Emoji"; -fx-font-size: 22px; -fx-padding: 5; -fx-min-width: 37; }
+.emoji-button { -fx-background-color: transparent; -fx-font-family: "Segoe UI Emoji"; -fx-font-size: 22px; -fx-padding: 5; -fx-min-width: 37; -fx-min-height: 37; }
 .emoji-button:hover { -fx-background-color: #e5efff; }
 .media-action { -fx-background-color: #f1f6ff; -fx-text-fill: #0068ff; -fx-font-size: 12px; -fx-padding: 7 12; }
 .media-play { -fx-background-color: #0068ff; -fx-text-fill: white; -fx-background-radius: 20; -fx-padding: 7 11; }

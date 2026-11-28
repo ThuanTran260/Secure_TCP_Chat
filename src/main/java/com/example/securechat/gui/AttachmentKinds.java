@@ -10,7 +10,7 @@ public final class AttachmentKinds {
         String extension = dot < 0 ? "" : fileName.substring(dot + 1).toLowerCase(Locale.ROOT);
         return switch (extension) {
             case "png", "jpg", "jpeg", "gif", "bmp" -> "image";
-            case "mp4", "m4v" -> "video";
+            case "mp4", "m4v", "mov" -> "video";
             case "wav", "mp3", "m4a" -> "audio";
             default -> "file";
         };

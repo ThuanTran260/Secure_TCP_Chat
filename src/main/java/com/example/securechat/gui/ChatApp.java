@@ -17,6 +17,7 @@ public final class ChatApp extends Application {
     private boolean stopped;
 
     @Override public void start(Stage stage) {
+        VideoPlayer.preload();
         stage.setTitle("Secure Chat");
         loginView = new LoginView(work, (connected, username) -> {
             if (stopped) { closeInBackground(connected); return; }

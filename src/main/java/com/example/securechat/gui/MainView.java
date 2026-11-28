@@ -88,7 +88,8 @@ public final class MainView extends BorderPane {
         conversationPane.setCenter(scroll);
         composer.setPromptText("Nhập tin nhắn…"); composer.getStyleClass().add("composer-input"); composer.setOnAction(event -> sendText()); HBox.setHgrow(composer, Priority.ALWAYS);
         send.getStyleClass().add("primary-button"); send.setOnAction(event -> sendText());
-        Button emoji = new Button("😊"); emoji.getStyleClass().add("toolbar-button"); emoji.setTooltip(new Tooltip("Chọn emoji"));
+        Button emoji = new Button(); emoji.getStyleClass().add("toolbar-button");
+        javafx.scene.image.ImageView smile = EmojiImages.view("😊", 20); if (smile != null) emoji.setGraphic(smile); else emoji.setText("😊"); emoji.setTooltip(new Tooltip("Chọn emoji"));
         EmojiPicker picker = new EmojiPicker(composer); emoji.setOnAction(event -> picker.showAbove(emoji));
         attach.getStyleClass().add("toolbar-button"); attach.setTooltip(new Tooltip("Đính kèm")); attach.setAccessibleText("Đính kèm");
         ContextMenu attachments = new ContextMenu();
@@ -178,7 +179,7 @@ public final class MainView extends BorderPane {
         if (disconnected) return;
         FileChooser chooser = new FileChooser(); chooser.setTitle("Chọn " + category.toLowerCase(Locale.ROOT));
         if (category.equals("Ảnh")) chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Ảnh", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"));
-        if (category.equals("Video")) chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Video MP4 H.264", "*.mp4", "*.m4v"));
+        if (category.equals("Video")) chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Video (MP4, MOV)", "*.mp4", "*.m4v", "*.mov"));
         java.io.File file = chooser.showOpenDialog(getScene().getWindow());
         if (file != null) upload(opened, file.toPath(), AttachmentKinds.kindFor(file.getName()), false);
     }

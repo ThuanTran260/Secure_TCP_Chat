@@ -5,6 +5,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.*;
+import javafx.scene.text.TextFlow;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 
@@ -16,8 +17,8 @@ public final class MessageBubbles {
         bubble.setMaxWidth(470);
         if (!entry.mine() && group) { Label from = new Label(message.getFrom()); from.getStyleClass().add("sender-name"); bubble.getChildren().add(from); }
         if (message.getKind() == null || "text".equals(message.getKind())) {
-            Label text = new Label(message.getContent()); text.setWrapText(true); text.setMaxWidth(430);
-            text.getStyleClass().add("message-text"); bubble.getChildren().add(text);
+            TextFlow text = EmojiImages.flow(message.getContent(), 20, "message-text", "message-text-run"); text.setMaxWidth(430);
+            bubble.getChildren().add(text);
         } else bubble.getChildren().add(media.create(message));
         if (message.getTimestamp() != null) {
             Label time = new Label(DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(message.getTimestamp()).atZone(ZoneId.systemDefault())));

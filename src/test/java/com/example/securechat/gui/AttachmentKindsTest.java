@@ -4,6 +4,10 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AttachmentKindsTest {
+    @Test void movIsVideo() {
+        assertEquals("video", AttachmentKinds.kindFor("clip.MOV"));
+    }
+
     @Test void recognizesSupportedExtensionsIgnoringCase() {
         assertEquals("video", AttachmentKinds.kindFor("A.MP4"));
         assertEquals("image", AttachmentKinds.kindFor("x.jpeg"));

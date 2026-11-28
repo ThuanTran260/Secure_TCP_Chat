@@ -7,10 +7,9 @@ import javafx.geometry.*;
 import javafx.scene.*;
 import javafx.scene.control.*;
 import javafx.scene.image.*;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.*;
-import javafx.scene.media.*;
 import javafx.stage.*;
-import javafx.util.Duration;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.Executor;
@@ -23,7 +22,9 @@ public final class MediaBubbles {
     private final Executor work;
     private final Window owner;
     private final Consumer<Throwable> errors;
-    private final List<MediaPlayer> players = new ArrayList<>();
+    private final List<VideoPlayer> players = new ArrayList<>();
+    /** The item most recently started; starting another one pauses it. */
+    private VideoPlayer active;
     private final List<Stage> previews = new ArrayList<>();
     private boolean disposed;
 
@@ -70,32 +71,55 @@ public final class MediaBubbles {
 
     private void player(VBox box, ChatMessage message, Path path) {
         boolean video = "video".equals(message.getKind());
-        try {
-            Media source = new Media(path.toUri().toString()); MediaPlayer player = new MediaPlayer(source); players.add(player);
-            if (video) { MediaView view = new MediaView(player); view.setFitWidth(320); view.setFitHeight(180); view.setPreserveRatio(true); box.getChildren().add(view); }
-            else { Label title = new Label("Tin nhắn thoại"); title.getStyleClass().add("attachment-title"); box.getChildren().add(title); }
-            Button play = new Button("▶"); play.getStyleClass().add("media-play");
-            Label duration = new Label("0:00"); duration.getStyleClass().add("muted");
-            Slider seek = new Slider(0, 1, 0); seek.setPrefWidth(video ? 200 : 160); HBox.setHgrow(seek, Priority.ALWAYS);
-            play.setOnAction(event -> {
-                if (player.getStatus() == MediaPlayer.Status.PLAYING) player.pause();
-                else { if (player.getCurrentTime().greaterThanOrEqualTo(player.getTotalDuration())) player.seek(Duration.ZERO); player.play(); }
-            });
-            player.statusProperty().addListener((observable, oldValue, value) -> play.setText(value == MediaPlayer.Status.PLAYING ? "⏸" : "▶"));
-            player.setOnReady(() -> { seek.setMax(Math.max(1, player.getTotalDuration().toSeconds())); duration.setText(format(player.getTotalDuration())); });
-            player.currentTimeProperty().addListener((observable, oldValue, current) -> {
-                if (!seek.isValueChanging()) seek.setValue(current.toSeconds());
-                duration.setText(format(current) + " / " + format(player.getTotalDuration()));
-            });
-            seek.setOnMouseReleased(event -> player.seek(Duration.seconds(seek.getValue())));
-            seek.valueChangingProperty().addListener((observable, previous, changing) -> { if (!changing) player.seek(Duration.seconds(seek.getValue())); });
-            HBox controls = new HBox(8, play, seek, duration); controls.setAlignment(Pos.CENTER_LEFT); box.getChildren().add(controls);
-            Runnable failed = () -> { player.dispose(); players.remove(player); box.getChildren().clear(); box.getChildren().add(new Label(video ? "Không phát được video này" : "Không phát được âm thanh này")); fileCard(box, message, "Lưu về máy"); };
-            source.setOnError(failed); player.setOnError(failed);
-            if (source.getError() != null || player.getError() != null) failed.run();
-        } catch (MediaException e) {
-            box.getChildren().clear(); box.getChildren().add(new Label(video ? "Không phát được video này" : "Không phát được âm thanh này")); fileCard(box, message, "Lưu về máy");
-        }
+        Label loading = new Label("Đang tải " + name(message) + "…"); loading.getStyleClass().add("muted");
+        box.getChildren().add(loading);
+        VideoPlayer.open(path, 320, 320, work).whenComplete((player, failure) -> Platform.runLater(() -> {
+            if (disposed) { if (player != null) player.dispose(); return; }
+            box.getChildren().clear();
+            if (failure != null) { playbackFailed(box, message, video); return; }
+            players.add(player); controls(box, message, player, video);
+        }));
+    }
+
+    private void controls(VBox box, ChatMessage message, VideoPlayer player, boolean video) {
+        // The Group gives a rotated picture its on-screen size in the layout.
+        if (video && player.hasVideo()) box.getChildren().add(new Group(player.view()));
+        else { Label title = new Label(video ? name(message) : "Tin nhắn thoại"); title.getStyleClass().add("attachment-title"); box.getChildren().add(title); }
+        Button play = new Button("▶"); play.getStyleClass().add("media-play");
+        String total = MediaTiming.format(player.durationMicros());
+        Label time = new Label(total); time.getStyleClass().add("muted");
+        Slider seek = new Slider(0, Math.max(1, player.durationMicros() / 1_000_000d), 0); seek.setPrefWidth(video ? 200 : 160); HBox.setHgrow(seek, Priority.ALWAYS);
+        play.setOnAction(event -> {
+            if (player.playingProperty().get()) { player.pause(); return; }
+            if (active != null && active != player) active.suspend();
+            active = player; player.play();
+        });
+        player.playingProperty().addListener((observable, previous, playing) -> play.setText(playing ? "⏸" : "▶"));
+        player.positionMicrosProperty().addListener((observable, previous, position) -> {
+            if (!seek.isValueChanging() && !seek.isPressed()) seek.setValue(position.longValue() / 1_000_000d);
+            time.setText(MediaTiming.format(position.longValue()) + " / " + total);
+        });
+        seekOnRelease(seek, () -> player.seek(Math.round(seek.getValue() * 1_000_000)));
+        player.setOnError(error -> {
+            player.dispose(); players.remove(player); if (active == player) active = null;
+            box.getChildren().clear(); playbackFailed(box, message, video);
+        });
+        HBox controls = new HBox(8, play, seek, time); controls.setAlignment(Pos.CENTER_LEFT); box.getChildren().add(controls);
+    }
+
+    /** Runs {@code seek} once per gesture: when a thumb drag ends, or on mouse release after a track click. */
+    static void seekOnRelease(Slider slider, Runnable seek) {
+        boolean[] dragged = {false};
+        slider.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> dragged[0] = false);
+        slider.valueChangingProperty().addListener((observable, previous, changing) -> {
+            if (changing) dragged[0] = true; else seek.run();
+        });
+        slider.setOnMouseReleased(event -> { if (!dragged[0]) seek.run(); });
+    }
+
+    private void playbackFailed(VBox box, ChatMessage message, boolean video) {
+        box.getChildren().add(new Label(video ? "Không phát được video này" : "Không phát được âm thanh này"));
+        fileCard(box, message, "Lưu về máy");
     }
 
     private void fileCard(VBox box, ChatMessage message, String action) {
@@ -117,6 +141,5 @@ public final class MediaBubbles {
         }, work).exceptionally(error -> { Platform.runLater(() -> { if (!disposed) errors.accept(error); }); return null; });
     }
     private static String name(ChatMessage message) { return message.getFileName() == null ? "Tệp đính kèm" : message.getFileName(); }
-    private static String format(Duration duration) { long seconds = duration == null || duration.isUnknown() || duration.isIndefinite() ? 0 : Math.max(0, (long) duration.toSeconds()); return seconds / 60 + ":" + String.format(Locale.ROOT, "%02d", seconds % 60); }
-    public void dispose() { disposed = true; players.forEach(MediaPlayer::dispose); players.clear(); List.copyOf(previews).forEach(Stage::close); previews.clear(); }
+    public void dispose() { disposed = true; active = null; players.forEach(VideoPlayer::dispose); players.clear(); List.copyOf(previews).forEach(Stage::close); previews.clear(); }
 }

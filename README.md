@@ -153,7 +153,14 @@ Nhập **Máy chủ**, **Cổng**, đường dẫn **Chứng chỉ server**, **T
 - Nhập tin rồi Enter hoặc **Gửi**. Nút **😊** chèn emoji tại vị trí con trỏ.
 - Nút đính kèm **+** cạnh ô nhập chọn **Ảnh**, **Video** hoặc **File**. File tối đa **25 MB**, không gửi file rỗng. Bấm ảnh để xem lớn; bấm **Tải về/Lưu về máy** để lưu bản gốc.
 - Bấm micro để bắt đầu ghi, bấm lần nữa để gửi tin nhắn thoại. Ghi tối đa **60 giây**, WAV PCM 16 kHz, 16-bit mono; cần micro khả dụng.
-- Video phát trong khung chat bằng JavaFX; dùng **MP4 H.264/AAC** để có khả năng tương thích tốt. Codec không hỗ trợ sẽ hiện thông báo cùng nút lưu file. Emoji có thể hiển thị đơn sắc tùy font và hệ điều hành.
+- Video (**MP4, M4V, MOV**) và âm thanh phát ngay trong khung chat (xem mục **Video/âm thanh** bên dưới). Tệp không giải mã được sẽ hiện thông báo cùng nút lưu file. Emoji có thể hiển thị đơn sắc tùy font và hệ điều hành.
+
+### Video/âm thanh
+
+- Video, tin nhắn thoại WAV, MP3 và M4A được giải mã bằng **FFmpeg 7.1** đóng gói sẵn qua **JavaCV 1.5.11** (bản FFmpeg của bytedeco, giấy phép **LGPL**). Không mở trình phát ngoài và không tải codec lúc chạy, nên không phụ thuộc codec của Windows.
+- Chỉ đóng gói thư viện native cho **Windows x86_64**; trên hệ điều hành hoặc kiến trúc khác, video và âm thanh không phát được.
+- Thư viện này làm jar nặng khoảng **42 MB**.
+- Bong bóng video có ảnh xem trước, nút ▶/⏸, thanh tua và thời gian. Mỗi lúc chỉ một mục được phát; chuyển hội thoại hoặc đóng cửa sổ thì dừng.
 
 | Tiêu chí | Tính năng | Test tự động |
 | --- | --- | --- |
@@ -182,3 +189,7 @@ Phân công agent và các quyết định tích hợp nằm tại [`docs/agent-
 - **Không commit** `server.p12`, `*.key`, `*.jks`, `*.pfx`, thư mục `certificates*/` hay mật khẩu keystore (đã có trong `.gitignore`). Keystore chứa private key: ai có file và mật khẩu đều giả mạo được server.
 - Dự án không kiểm tra thu hồi chứng chỉ (OCSP/CRL) và không dùng client certificate (mTLS).
 - Chỉ giới hạn đăng nhập sai theo cặp (IP, username): tối đa 5 lần sai trong 5 phút, sau đó khóa 60 giây.
+
+## Ghi công emoji
+
+Ảnh emoji màu trong `src/main/resources/com/example/securechat/gui/emoji/` lấy từ [Twemoji](https://github.com/jdecked/twemoji) (bản 15.1.0), © Twitter, Inc và các cộng tác viên, cấp phép [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). Ảnh được đóng gói sẵn trong ứng dụng, không tải từ mạng lúc chạy.
